@@ -6,17 +6,17 @@ from collections import defaultdict
 import os
 import random
 import uuid
-import json
 
 ###############################
 # Problem Dimensions
 ###############################
 
-NUM_ROWS = 30
-NUM_COLS = 45
+NUM_ROWS = 10
+NUM_COLS = 10
 BLOCK_SIZE = 8
-SCALES = [1, 2, 4]
-EDGE_WEIGHT = 5.0
+NUM_COLORS = 10
+SCALES = [1, 2, 4, 8]
+EDGE_WEIGHT = 4.0
 SIZE_BONUS = 2.0
 
 random.seed(42)
@@ -33,13 +33,18 @@ class Polyomino:
         self.height = max(r for r,c in blocks) + 1
         self.width  = max(c for r,c in blocks) + 1
 
+    # rotates the polyomino 90 deg CW, retaining positive coordinates
     def rotate(self):
+        # 90 deg CW rotation
         rotated = [(c, -r) for r,c in self.blocks]
         min_r = min(r for r,c in rotated)
         min_c = min(c for r,c in rotated)
+
+        # translates to ensure positive coordinates
         rotated = [(r-min_r, c-min_c) for r,c in rotated]
         return Polyomino(self.name, rotated)
 
+    # rotates by 0, 90, 180, 270 deg
     def rotations(self):
         rots = []
         s = self
@@ -56,21 +61,10 @@ POLYOMINOES = [
     Polyomino("D2v",[(0,0),(1,0)])
 ]
 
-###############################
-# Load palette config
-###############################
-
-PALETTE_CONFIG = os.path.join(os.path.dirname(__file__), "colors/starry-night.json")
-
-with open(PALETTE_CONFIG, "r") as f:
-    palette_data = json.load(f)
-
-palette = [tuple(color) for color in palette_data["colors"]]
-NUM_COLORS = len(palette)
-
-# each color gets assigned a single shape -- i.e not all shapes are available in all possible colors
+# Each polyomino gets assigned a single color. This makes things a little more interesting since the linear
+# program now has to balance tiling + brightness/color-matching constraints!
 color_to_polyomino = {
-    c: POLYOMINOES[c % len(POLYOMINOES)]
+    c: random.choice(POLYOMINOES)
     for c in range(NUM_COLORS)
 }
 
@@ -78,58 +72,59 @@ color_to_polyomino = {
 # Load target image 
 ###############################
 
-TARGET_IMAGE_PATH = os.path.join(os.path.dirname(__file__), 'sources/starry-night.jpg')
-OUTPUT_IMAGE = f"output/edge-aware-v1-monalisa-{uuid.uuid4().hex}.png"
+TARGET_IMAGE_PATH = os.path.join(os.path.dirname(__file__), 'sources/frankenstein.png')
+OUTPUT_IMAGE = f"output/edge-aware-v1-{uuid.uuid4().hex}.png"
 
-img = Image.open(TARGET_IMAGE_PATH).convert("L")
+img = Image.open(TARGET_IMAGE_PATH).convert("L") # converts to greyscale
 img = img.resize((NUM_COLS*BLOCK_SIZE, NUM_ROWS*BLOCK_SIZE), Image.LANCZOS)
 img_arr = np.array(img)
 
 block_brightness = np.zeros((NUM_ROWS, NUM_COLS))
 for i in range(NUM_ROWS):
     for j in range(NUM_COLS):
-        block = img_arr[i*BLOCK_SIZE:(i+1)*BLOCK_SIZE,
-                        j*BLOCK_SIZE:(j+1)*BLOCK_SIZE]
+        block = img_arr[
+            i*BLOCK_SIZE:(i+1)*BLOCK_SIZE,
+            j*BLOCK_SIZE:(j+1)*BLOCK_SIZE
+        ]
         block_brightness[i,j] = round(block.mean() / 255.0 * (NUM_COLORS - 1))
 
-###############################
-# Edge map
-###############################
-
+# apply the Laplacian operator to the image to get an "edge map" (i.e pixels that are around edges 
+# in the image get a high value, while pixels in a relatively flat region get a low value)
 laplace_edges = filters.laplace(img_arr / 255.0)
-
 edge_block = np.zeros((NUM_ROWS, NUM_COLS))
 for i in range(NUM_ROWS):
     for j in range(NUM_COLS):
         block = laplace_edges[i*BLOCK_SIZE:(i+1)*BLOCK_SIZE,
-                              j*BLOCK_SIZE:(j+1)*BLOCK_SIZE]
+                            j*BLOCK_SIZE:(j+1)*BLOCK_SIZE]
+        # its very important to take the absolute value here! because the way the laplacian operator works 
+        # is by detecting "zero-crossings", i.e rapid changes from negative to positive values
+        # taking just the mean would produce a misleading edge map
         edge_block[i,j] = np.mean(np.abs(block))
-
+# normalize mean laplacians to be in the range [0, 1]
 edge_block /= np.max(edge_block)
 edge_block = np.clip(edge_block, 0, 1)
+print(edge_block)
 
 ###############################
-# Palette
+# Generating tiles
 ###############################
 
-def generate_palette():
+def generate_tiles():
     tiles = []
-    brightness_vals = []
+    vals  = []
+    for c in range(NUM_COLORS):
+        v = int(c / (NUM_COLORS - 1) * 255)
+        t = Image.new("L", (BLOCK_SIZE, BLOCK_SIZE), v)
+        tiles.append(t)
+        vals.append(v)
+    vals = np.array(vals)
+    return tiles, vals
 
-    for (r,g,b) in palette:
-        tile = Image.new("RGB", (BLOCK_SIZE, BLOCK_SIZE), (r,g,b))
-        tiles.append(tile)
+colored_tiles, brightness_values = generate_tiles()
 
-        brightness = 0.299*r + 0.587*g + 0.114*b
-        brightness_vals.append(brightness)
-
-    brightness_vals = np.array(brightness_vals)
-    return tiles, brightness_vals
-
-colored_tiles, brightness_values = generate_palette()
-
+# Brings all brightness values in the discrete range [0, 9]
 normalized_brightness = (brightness_values - brightness_values.min()) / \
-                        (brightness_values.max() - brightness_values.min()) * 9
+                        (brightness_values.max() - brightness_values.min()) * (NUM_COLORS - 1)
 
 ###############################
 # Placement generation
@@ -138,6 +133,8 @@ normalized_brightness = (brightness_values - brightness_values.min()) / \
 placements = []
 block_to_placements = defaultdict(list)
 
+# anchor == top-left block position
+# the method just gives you all the blocks in footprint of this shape at this scale
 def expanded_blocks(shape, scale, anchor):
     ai, aj = anchor
     blocks = []
@@ -158,7 +155,7 @@ for c in range(NUM_COLORS):
             for i in range(max_i + 1):
                 for j in range(max_j + 1):
                     blocks = expanded_blocks(shape, S, (i,j))
-                    p = len(placements)
+                    p = len(placements) # used later to index into the current placement
                     placements.append((c, shape, S, (i,j), blocks))
                     for block in blocks:
                         block_to_placements[block].append(p)
@@ -178,7 +175,7 @@ for i in range(NUM_ROWS):
         constraints.append(cp.sum(x[block_to_placements[(i,j)]]) == 1)
 
 ###############################
-# Objective
+# Objective function 
 ###############################
 
 costs = np.zeros(NUM_PLACEMENTS)
@@ -199,18 +196,18 @@ for p, (c, shape, S, (i,j), blocks) in enumerate(placements):
 problem = cp.Problem(cp.Minimize(costs @ x), constraints)
 
 ###############################
-# Solve
+# Solve it!
 ###############################
 
 print("Solving...")
-problem.solve(verbose=True)
+problem.solve(verbose=True, solver='HIGHS')
 print("Status:", problem.status)
 
 ###############################
-# Render image
+# Render image 
 ###############################
 
-result = Image.new("RGB",(NUM_COLS*BLOCK_SIZE,NUM_ROWS*BLOCK_SIZE),(255,255,255))
+result = Image.new("L",(NUM_COLS*BLOCK_SIZE,NUM_ROWS*BLOCK_SIZE),255)
 draw = ImageDraw.Draw(result)
 
 for p, val in enumerate(x.value):
@@ -224,21 +221,28 @@ for p, val in enumerate(x.value):
                 (jj*BLOCK_SIZE, ii*BLOCK_SIZE)
             )
 
-        # borders
+        # draw a border 
         for (ii,jj) in blocks:
             x0 = jj * BLOCK_SIZE
             y0 = ii * BLOCK_SIZE
             x1 = x0 + BLOCK_SIZE
             y1 = y0 + BLOCK_SIZE
 
+            # The idea here is that if the left neighbour is not in the block set, 
+            # draw a border, if the top neighbour does not exist in the block set, draw 
+            # a border, and so on...
+
             if (ii-1, jj) not in block_set:
-                draw.line([(x0,y0),(x1,y0)], fill=(0,0,0), width=2)
+                draw.line([(x0,y0),(x1,y0)], fill=0, width=2)
+            
             if (ii+1, jj) not in block_set:
-                draw.line([(x0,y1),(x1,y1)], fill=(0,0,0), width=2)
+                draw.line([(x0,y1),(x1,y1)], fill=0, width=2)
+            
             if (ii, jj-1) not in block_set:
-                draw.line([(x0,y0),(x0,y1)], fill=(0,0,0), width=2)
+                draw.line([(x0,y0),(x0,y1)], fill=0, width=2)
+            
             if (ii, jj+1) not in block_set:
-                draw.line([(x1,y0),(x1,y1)], fill=(0,0,0), width=2)
+                draw.line([(x1,y0),(x1,y1)], fill=0, width=2)
 
 result.save(OUTPUT_IMAGE)
 print("Saved:", OUTPUT_IMAGE)
