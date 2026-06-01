@@ -119,3 +119,7 @@ class TileSet:
                 block_to_placements[block].append(i)
         return block_to_placements
     
+    @property
+    def num_placements(self) -> int:
+        return len(self.placements)
+    

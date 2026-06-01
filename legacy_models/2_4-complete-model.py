@@ -82,7 +82,7 @@ TARGET_IMAGE_PATH = os.path.join(os.path.dirname(__file__), '../sources/starry-n
 OUTPUT_IMAGE = f"output/edge-aware-v1-monalisa-{uuid.uuid4().hex}.png"
 
 img = Image.open(TARGET_IMAGE_PATH).convert("L")
-img = img.resize((NUM_COLS*BLOCK_SIZE, NUM_ROWS*BLOCK_SIZE), Image.LANCZOS)
+img = img.resize((NUM_COLS*BLOCK_SIZE, NUM_ROWS*BLOCK_SIZE), Image.LANCZOS) # type: ignore
 img_arr = np.array(img)
 
 block_brightness = np.zeros((NUM_ROWS, NUM_COLS))
@@ -216,7 +216,7 @@ print("Status:", problem.status)
 result = Image.new("RGB",(NUM_COLS*BLOCK_SIZE,NUM_ROWS*BLOCK_SIZE),(255,255,255))
 draw = ImageDraw.Draw(result)
 
-for p, val in enumerate(x.value):
+for p, val in enumerate(x.value): # type: ignore
     if val > 0.5:
         c, shape, S, (i,j), blocks = placements[p]
         block_set = set(blocks)
