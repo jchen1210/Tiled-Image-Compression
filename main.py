@@ -3,6 +3,7 @@ from PIL import Image
 import os
 import random
 import json
+import uuid
 from core import Polyomino, TileSet, Tile, OptimizationSettings, ImageSettings, ImageData, Palette, TilingOptimizer, TilingRenderer
 
 ###############################
@@ -13,8 +14,8 @@ NUM_ROWS = 20
 NUM_COLS = 30
 BLOCK_SIZE = 8
 SCALES = [1, 2]
-EDGE_WEIGHT = 4.0
-SIZE_BONUS = 3.0
+EDGE_WEIGHT = 2.0
+SIZE_BONUS = 4.0
 
 random.seed(42)
 np.random.seed(42)
@@ -24,7 +25,7 @@ np.random.seed(42)
 ###############################
 
 TARGET_IMAGE_PATH = os.path.join(os.path.dirname(__file__), 'sources/starry-night.jpg')
-OUTPUT_IMAGE_PATH = f"output/new-starrynight.png"
+OUTPUT_IMAGE_PATH = f"output/starrynight-{NUM_COLS}x{NUM_ROWS}-edge{EDGE_WEIGHT}-size{SIZE_BONUS}.png"
 image = Image.open(TARGET_IMAGE_PATH)
 
 PALETTE_PATH = os.path.join(os.path.dirname(__file__), 'colours/starry-night-colours.json')
@@ -33,7 +34,7 @@ with open(PALETTE_PATH, "r") as f:
 colours = [tuple(colour) for colour in palette_data['colours']]
 
 image_settings = ImageSettings(NUM_ROWS, NUM_COLS, BLOCK_SIZE)
-optimization_settings = OptimizationSettings(EDGE_WEIGHT, SIZE_BONUS)
+optimization_settings = OptimizationSettings(EDGE_WEIGHT, SIZE_BONUS, 0.04)
 palette = Palette(colours)
 image_data = ImageData(image, image_settings)
 

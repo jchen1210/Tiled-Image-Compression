@@ -49,7 +49,7 @@ class TilingOptimizer:
         size_weight = self.settings.size_bonus_weight
         colour_to_brightness = self.palette.colour_to_brightness()
         edge_arr = self.image_data.laplacian
-        brightness_arr = self.image_data.brightness_arr
+        brightness_arr = self.image_data.brightnesses
 
         for p, (tile, (i, j)) in enumerate(self.placements):
             err = 0
