@@ -10,12 +10,12 @@ from core import Polyomino, TileSet, Tile, OptimizationSettings, ImageSettings, 
 # Problem Dimensions
 ###############################
 
-NUM_ROWS = 80
-NUM_COLS = 128
+NUM_ROWS = 100
+NUM_COLS = 160
 BLOCK_SIZE = 8
-SCALES = [1, 2, 4]
-EDGE_WEIGHT = 0.35
-SIZE_BONUS = 0.20
+SCALES = [1, 2]
+EDGE_WEIGHT = 0.3
+SIZE_BONUS = 0.1
 
 random.seed(42)
 np.random.seed(42)
