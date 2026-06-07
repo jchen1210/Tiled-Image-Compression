@@ -12,10 +12,10 @@ import json
 # Problem Dimensions
 ###############################
 
-NUM_ROWS = 30
-NUM_COLS = 45
+NUM_ROWS = 20
+NUM_COLS = 30
 BLOCK_SIZE = 8
-SCALES = [1, 2, 4]
+SCALES = [1, 2]
 EDGE_WEIGHT = 5.0
 SIZE_BONUS = 2.0
 
@@ -60,29 +60,29 @@ POLYOMINOES = [
 # Load palette config
 ###############################
 
-PALETTE_CONFIG = os.path.join(os.path.dirname(__file__), "colors/starry-night.json")
+PALETTE_CONFIG = os.path.join(os.path.dirname(__file__), "../colours/starry-night-colours.json")
 
 with open(PALETTE_CONFIG, "r") as f:
     palette_data = json.load(f)
 
-palette = [tuple(color) for color in palette_data["colors"]]
-NUM_COLORS = len(palette)
+palette = [tuple(colour) for colour in palette_data["colours"]]
+NUM_COLOURS = len(palette)
 
-# each color gets assigned a single shape -- i.e not all shapes are available in all possible colors
-color_to_polyomino = {
+# each colour gets assigned a single shape -- i.e not all shapes are available in all possible colours
+colour_to_polyomino = {
     c: POLYOMINOES[c % len(POLYOMINOES)]
-    for c in range(NUM_COLORS)
+    for c in range(NUM_COLOURS)
 }
 
 ###############################
 # Load target image 
 ###############################
 
-TARGET_IMAGE_PATH = os.path.join(os.path.dirname(__file__), 'sources/starry-night.jpg')
+TARGET_IMAGE_PATH = os.path.join(os.path.dirname(__file__), '../sources/starry-night.jpg')
 OUTPUT_IMAGE = f"output/edge-aware-v1-monalisa-{uuid.uuid4().hex}.png"
 
 img = Image.open(TARGET_IMAGE_PATH).convert("L")
-img = img.resize((NUM_COLS*BLOCK_SIZE, NUM_ROWS*BLOCK_SIZE), Image.LANCZOS)
+img = img.resize((NUM_COLS*BLOCK_SIZE, NUM_ROWS*BLOCK_SIZE), Image.LANCZOS) # type: ignore
 img_arr = np.array(img)
 
 block_brightness = np.zeros((NUM_ROWS, NUM_COLS))
@@ -90,7 +90,7 @@ for i in range(NUM_ROWS):
     for j in range(NUM_COLS):
         block = img_arr[i*BLOCK_SIZE:(i+1)*BLOCK_SIZE,
                         j*BLOCK_SIZE:(j+1)*BLOCK_SIZE]
-        block_brightness[i,j] = round(block.mean() / 255.0 * (NUM_COLORS - 1))
+        block_brightness[i,j] = round(block.mean() / 255.0 * (NUM_COLOURS - 1))
 
 ###############################
 # Edge map
@@ -126,7 +126,7 @@ def generate_palette():
     brightness_vals = np.array(brightness_vals)
     return tiles, brightness_vals
 
-colored_tiles, brightness_values = generate_palette()
+coloured_tiles, brightness_values = generate_palette()
 
 normalized_brightness = (brightness_values - brightness_values.min()) / \
                         (brightness_values.max() - brightness_values.min()) * 9
@@ -149,8 +149,8 @@ def expanded_blocks(shape, scale, anchor):
                 blocks.append((i,j))
     return blocks
 
-for c in range(NUM_COLORS):
-    base = color_to_polyomino[c]
+for c in range(NUM_COLOURS):
+    base = colour_to_polyomino[c]
     for shape in base.rotations():
         for S in SCALES:
             max_i = NUM_ROWS - shape.height*S
@@ -203,7 +203,10 @@ problem = cp.Problem(cp.Minimize(costs @ x), constraints)
 ###############################
 
 print("Solving...")
-problem.solve(verbose=True)
+problem.solve(verbose=True, solver='HIGHS',
+              highs_options={
+                "mip_rel_gap": 0,
+                })
 print("Status:", problem.status)
 
 ###############################
@@ -213,14 +216,14 @@ print("Status:", problem.status)
 result = Image.new("RGB",(NUM_COLS*BLOCK_SIZE,NUM_ROWS*BLOCK_SIZE),(255,255,255))
 draw = ImageDraw.Draw(result)
 
-for p, val in enumerate(x.value):
+for p, val in enumerate(x.value): # type: ignore
     if val > 0.5:
         c, shape, S, (i,j), blocks = placements[p]
         block_set = set(blocks)
 
         for (ii,jj) in blocks:
             result.paste(
-                colored_tiles[c],
+                coloured_tiles[c],
                 (jj*BLOCK_SIZE, ii*BLOCK_SIZE)
             )
 
